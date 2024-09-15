@@ -1,0 +1,118 @@
+name: llm-zoomcamp-sql-generator
+services:
+  postgres:
+    hostname: ${POSTGRES_HOST:-postgres}
+    image: postgres:12.9
+    container_name: sql-generator-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - type: bind
+        source: ../data/db-data
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
+#      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres_init:
+    image: postgres:12.9
+    container_name: sql-generator-postgres_init
+    environment:
+      POSTGRES_DB: dvdrental
+      POSTGRES_USER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}      
+    volumes:
+      - type: bind
+        source: ../data/dvdrental_db/dvdrental.tar
+        target: /docker-entrypoint-initdb.d/dvdrental.tar
+        bind:
+          create_host_path: true
+#      - ../data/dvdrental_db/dvdrental.tar:/docker-entrypoint-initdb.d/dvdrental.tar
+    entrypoint: >
+      bash -c "
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -c 'CREATE DATABASE dvdrental' &&
+      pg_restore -h postgres -p 5432 -U ${POSTGRES_USER} -d dvdrental /docker-entrypoint-initdb.d/dvdrental.tar
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy  
+
+  app:
+    container_name: sql-generator-app
+    build:
+      context: ./..
+      dockerfile: docker/app.Dockerfile
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATA_PATH: "data/rag_dataset"
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    depends_on:
+      - postgres
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.1
+    container_name: sql-generator-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+    ports:
+      - "${ELASTICSEARCH_PORT_9200:-9200}:9200"
+      - "${ELASTICSEARCH_PORT_9300:-9300}:9300"
+    volumes:
+      - type: bind
+        source: ../data/es-data
+        target: /usr/share/elasticsearch/data
+        bind:
+          create_host_path: true
+#      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+#    depends_on:
+#      postgres:
+#        condition: service_healthy
+
+  grafana:
+    container_name: sql-generator-grafana
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - type: bind
+        source: ../data/grafana-data
+        target: /var/lib/grafana
+        bind:
+          create_host_path: true
+#      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_USERS_AUTO_ASSIGN_ORG=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY:-your_secret_key_here}
+    depends_on:
+      - postgres
+
+#volumes:
+#  postgres_data:     
+#  grafana_data:       
+#  es_data:

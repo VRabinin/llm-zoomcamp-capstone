@@ -1,0 +1,2 @@
+Here is a database schema: {schema}
+  Please write me a syntactically correct SQL statement that answers the following question: {instruction}
