@@ -198,7 +198,7 @@ left_col, mid_col, right_col = st.columns([1, 2, 3])
 
 # Elements in the left column
 with left_col:
-    user_question = st.text_area("Enter your question:", "Top 5 movies by number of ratings")
+    user_question = st.text_area("Enter your question:", "Top 5 movies by number of rentals")
     db_selection = st.selectbox("Select Database:", db_list)
     llm_selection = st.selectbox("Select LLM:", llm_list)
     st.markdown('----')

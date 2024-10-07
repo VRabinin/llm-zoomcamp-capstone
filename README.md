@@ -113,19 +113,21 @@ Before the first use, we need to run the pipeline to prepare indexes based on th
 
 3. The application will process your query and display the corresponding SQL statement.
 
+### Monitoring
+We use Grafana for monitoring the application. 
+It's accessible at [localhost:3000](http://localhost:3000):
+
+- Login: "admin"
+- Password: "admin"
+
+To initialize the dashboard, first ensure Grafana is running (it starts automatically when you do `docker-compose up`). Then start shell, navigate to the folder `monitoring` and run
+
+    ```
+    python grafana_init.py
+    ```
+
 ## Sample Queries
 Here are some sample queries for DVD Rental database to get you started:
 - [Sample Queries](https://github.com/AadamBodunrin/SQL-for-Beginners/blob/master/DVDRental%20Database%20Queries.sql)
 
-## Contributing
-We welcome contributions from the community. To contribute, please follow these steps:
 
-1. Fork the repository.
-2. Create a new branch (`git checkout -b feature-branch`).
-3. Make your changes.
-4. Commit your changes (`git commit -m 'Add some feature'`).
-5. Push to the branch (`git push origin feature-branch`).
-6. Open a pull request.
-
-## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

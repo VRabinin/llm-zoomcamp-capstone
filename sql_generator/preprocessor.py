@@ -7,7 +7,7 @@ import os
 import spacy
 
 
-PREPROCESSOR_CONFIG_PATH  = os.path.normpath(os.path.abspath(os.path.join(os.getcwd(), os.path.pardir, 'sql_generator/config/preprocessor.yaml')))
+PREPROCESSOR_CONFIG_PATH  = 'config/preprocessor.yaml'
 
 #@singleton
 class PreProcessor:
@@ -17,10 +17,11 @@ class PreProcessor:
     models: list
     
     def __init__(self, config_path=PREPROCESSOR_CONFIG_PATH):
-        pp_config = util.load_yaml_config(config_path)
+        #pp_config = util.load_yaml_config(config_path)
         self.models = []
-        for model in pp_config['gensim_models']:
-            self.models.append(model['name'])
+        #for model in pp_config['gensim_models']:
+        #    self.models.append(model['name'])
+        self.models = ['glove-wiki-gigaword-50', 'glove-wiki-gigaword-100', 'glove-wiki-gigaword-200', 'glove-wiki-gigaword-300']
         self.spacy = spacy.load("en_core_web_sm")
         self.inflect = inflect_engine()
         self.word_vectors = gensim_api.load(self.models[0])

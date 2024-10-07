@@ -46,6 +46,7 @@ JOIN information_schema.tables t
     AND c.table_schema = t.table_schema
     AND c.table_name = t.table_name
 WHERE c.table_schema <> 'information_schema' 
+AND c.table_schema <> 'pg_catalog'
 ORDER BY c.table_name, c.column_name;
 """
 

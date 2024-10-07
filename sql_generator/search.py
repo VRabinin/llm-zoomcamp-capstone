@@ -54,6 +54,7 @@ class FuzzySearch(ISearch):
 
     def search_by_query(self, db_name, query: str, **kwards):
         if self.pre_processor is None:
+            import preprocessor
             from preprocessor import pre_processor
             self.pre_processor = pre_processor
         if self.df_table_columns is None or db_name != self.db_name:

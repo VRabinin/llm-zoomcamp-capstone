@@ -24,14 +24,14 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
+  "id": 2,
   "links": [],
   "liveNow": false,
   "panels": [
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -40,7 +40,9 @@
           },
           "custom": {
             "align": "auto",
-            "displayMode": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
@@ -93,7 +95,9 @@
       },
       "id": 12,
       "options": {
+        "cellHeight": "sm",
         "footer": {
+          "countRows": false,
           "fields": "",
           "reducer": [
             "sum"
@@ -103,7 +107,7 @@
         "showHeader": true,
         "sortBy": []
       },
-      "pluginVersion": "9.3.1",
+      "pluginVersion": "11.2.0",
       "targets": [
         {
           "datasource": {
@@ -139,22 +143,46 @@
     },
     {
       "datasource": {
-        "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "default": true,
+        "type": "grafana-postgresql-datasource",
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
             }
           },
-          "mappings": []
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         },
         "overrides": []
       },
@@ -166,28 +194,27 @@
       },
       "id": 14,
       "options": {
-        "displayLabels": [
-          "percent"
-        ],
+        "barRadius": 0,
+        "barWidth": 0.97,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
         "legend": {
+          "calcs": [],
           "displayMode": "list",
-          "placement": "right",
-          "showLegend": true,
-          "values": []
+          "placement": "bottom",
+          "showLegend": true
         },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
+        "orientation": "auto",
+        "showValue": "auto",
+        "stacking": "none",
         "tooltip": {
           "mode": "single",
           "sort": "none"
-        }
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
       },
+      "pluginVersion": "11.2.0",
       "targets": [
         {
           "datasource": {
@@ -197,7 +224,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  SUM(CASE WHEN feedback > 0 THEN 1 ELSE 0 END) as thumbs_up,\r\n  SUM(CASE WHEN feedback < 0 THEN 1 ELSE 0 END) as thumbs_down\r\nFROM feedback\r\nWHERE timestamp BETWEEN $__timeFrom() AND $__timeTo()\r\n",
+          "rawSql": "SELECT\r\n  c.database_name,\r\n  SUM(CASE WHEN f.feedback > 0 THEN 1 ELSE 0 END) as thumbs_up,\r\n  SUM(CASE WHEN f.feedback < 0 THEN 1 ELSE 0 END) as thumbs_down\r\nFROM feedback AS f\r\nINNER JOIN conversations as c\r\nON c.id = f.conversation_id\r\nWHERE f.timestamp BETWEEN $__timeFrom() AND $__timeTo()\r\nGROUP BY c.database_name",
           "refId": "A",
           "sql": {
             "columns": [
@@ -219,12 +246,12 @@
         }
       ],
       "title": "+1/-1",
-      "type": "piechart"
+      "type": "barchart"
     },
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -257,6 +284,8 @@
       },
       "id": 4,
       "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [],
@@ -264,9 +293,10 @@
           "values": true
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
-      "pluginVersion": "9.3.1",
+      "pluginVersion": "11.2.0",
       "targets": [
         {
           "datasource": {
@@ -303,7 +333,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -311,11 +341,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -324,6 +356,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -412,7 +445,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -420,11 +453,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -433,6 +468,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -521,7 +557,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -529,6 +565,7 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
@@ -553,8 +590,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -576,6 +612,7 @@
       "options": {
         "barRadius": 0,
         "barWidth": 0.97,
+        "fullHighlight": false,
         "groupWidth": 0.7,
         "legend": {
           "calcs": [],
@@ -629,7 +666,7 @@
     {
       "datasource": {
         "type": "postgres",
-        "uid": "fJMbpi3Iz"
+        "uid": "de064d39zib5sc"
       },
       "fieldConfig": {
         "defaults": {
@@ -637,11 +674,13 @@
             "mode": "palette-classic"
           },
           "custom": {
+            "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -650,6 +689,7 @@
               "tooltip": false,
               "viz": false
             },
+            "insertNulls": false,
             "lineInterpolation": "linear",
             "lineWidth": 1,
             "pointSize": 5,
@@ -671,8 +711,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -737,8 +776,7 @@
     }
   ],
   "refresh": "30s",
-  "schemaVersion": 37,
-  "style": "dark",
+  "schemaVersion": 39,
   "tags": [],
   "templating": {
     "list": []
@@ -750,7 +788,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "SQL Translator",
-  "uid": "QTaWhmqSz",
-  "version": 2,
+  "uid": "ce0651g7ypgxsc",
+  "version": 8,
   "weekStart": ""
 }

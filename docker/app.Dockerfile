@@ -13,10 +13,6 @@ ENV POETRY_VIRTUALENVS_CREATE=false
 #RUN pip3.12 install --no-cache-dir poetry
 RUN pip3.12 install poetry
 
-RUN mkdir -p /app/data/llama_text_to_sql_dataset/
-
-COPY data/llama_text_to_sql_dataset /app/data/llama_text_to_sql_dataset
-
 COPY ["pyproject.toml", "poetry.lock", "./"]
 
 RUN poetry install
