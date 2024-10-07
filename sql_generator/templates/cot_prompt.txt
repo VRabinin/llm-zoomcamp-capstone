@@ -1,4 +1,5 @@
 Here is a database schema: 
 {schema}
   Please write me a syntactically correct SQL statement that answers the following question: {instruction}
-  It is not necessary to use all the tables. Use tag <SQL> to wrap the SQL statement.
+  It is not necessary to use all the tables. Explain your answer.
+  Use tag <SQL> to wrap the SQL statement.

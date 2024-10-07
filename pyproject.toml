@@ -6,13 +6,21 @@ authors = ["Valery Rabinin <valery.rabinin@kraftheinz.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = ">=3.11,<3.13"
 datasets = "^3.0.0"
 ipykernel = "^6.29.5"
 scikit-learn = "^1.5.2"
 openai = "^1.45.0"
-psycopg2 = "^2.9.9"
 fuzzywuzzy = "^0.18.0"
+numpy = "1.26.4"
+spacy = "^3.7.6"
+gensim = "^4.3.3"
+inflect = "^7.4.0"
+streamlit = "^1.38.0"
+psycopg2-binary = "^2.9.9"
+dagster = "^1.8.9"
+elasticsearch = "^8.15.1"
+dagster-webserver = "^1.8.9"
 
 
 [build-system]

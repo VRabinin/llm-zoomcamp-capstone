@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_L_PORT:-5432}:5432"
     volumes:
       - type: bind
         source: ../data/db-data
@@ -31,17 +31,39 @@ services:
       POSTGRES_DB: dvdrental
       POSTGRES_USER: ${POSTGRES_USER}
       PGPASSWORD: ${POSTGRES_PASSWORD}      
-    volumes:
-      - type: bind
-        source: ../data/dvdrental_db/dvdrental.tar
-        target: /docker-entrypoint-initdb.d/dvdrental.tar
-        bind:
-          create_host_path: true
-#      - ../data/dvdrental_db/dvdrental.tar:/docker-entrypoint-initdb.d/dvdrental.tar
+#    volumes:
+#      - type: bind
+#        source: ../data/dvdrental_db/dvdrental.tar
+#        target: /docker-entrypoint-initdb.d/dvdrental.tar
+#        bind:
+#          create_host_path: true
     entrypoint: >
       bash -c "
+      apt-get update --allow-insecure-repositories &&
+      apt-get install -y wget unzip ruby-full &&
+      mkdir aw_data &&
+      wget https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorks-oltp-install-script.zip &&
+      unzip AdventureWorks-oltp-install-script.zip -d aw_data &&
+      rm AdventureWorks-oltp-install-script.zip &&
+      cd aw_data &&
+      wget https://raw.githubusercontent.com/lorint/AdventureWorks-for-Postgres/refs/heads/master/install.sql &&
+      wget https://raw.githubusercontent.com/lorint/AdventureWorks-for-Postgres/refs/heads/master/update_csvs.rb &&
+      ruby update_csvs.rb &&
+      rm update_csvs.rb &&
+      wget https://raw.githubusercontent.com/lorint/AdventureWorks-for-Postgres/refs/heads/master/install.sh &&
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -h postgres -p 5432 -U ${POSTGRES_USER} -c 'DROP DATABASE IF EXISTS adventureworks' &&
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -h postgres -p 5432 -U ${POSTGRES_USER} -c 'CREATE DATABASE adventureworks' &&
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -d adventureworks < install.sql &&
+      cd .. &&
+      wget https://www.postgresqltutorial.com/wp-content/uploads/2019/05/dvdrental.zip &&
+      mkdir dvd_data &&      
+      unzip dvdrental.zip -d dvd_data &&
+      rm dvdrental.zip &&
+      cd dvd_data &&
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -h postgres -p 5432 -U ${POSTGRES_USER} -c 'DROP DATABASE IF EXISTS dvdrental' &&
       psql -h postgres -p 5432 -U ${POSTGRES_USER} -c 'CREATE DATABASE dvdrental' &&
-      pg_restore -h postgres -p 5432 -U ${POSTGRES_USER} -d dvdrental /docker-entrypoint-initdb.d/dvdrental.tar
+      pg_restore -h postgres -p 5432 -U ${POSTGRES_USER} -d dvdrental dvdrental.tar &&
+      psql -h postgres -p 5432 -U ${POSTGRES_USER} -tc "SELECT 1 FROM pg_database WHERE datname = 'dagster'" | grep -q 1 || psql -h postgres -p 5432 -U ${POSTGRES_USER} -c 'CREATE DATABASE dagster' &&
       "
     depends_on:
       postgres:
@@ -53,12 +75,35 @@ services:
       context: ./..
       dockerfile: docker/app.Dockerfile
     environment:
+      POSTGRES_HOST: ${POSTGRES_HOST:-postgres}      
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}    
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       DATA_PATH: "data/rag_dataset"
     ports:
-      - "${APP_PORT:-5000}:5000"
+      - "${APP_PORT:-8501}:8501"
     depends_on:
       - postgres
+
+  dagster:
+    #env_file:
+    #  - .env.dev
+    build:
+      #context: .
+      context: ./..
+      dockerfile: docker/dagster.Dockerfile      
+    environment:
+      DAGSTER_PG_HOST: ${POSTGRES_HOST:-postgres}      
+      DAGSTER_PG_DB: ${DAGSTER_PG_DB}
+      DAGSTER_PG_USERNAME: ${POSTGRES_USER}
+      DAGSTER_PG_PASSWORD: ${POSTGRES_PASSWORD}   
+      DAGSTER_PG_PORT: 5432
+    ports:
+      - "${DAGSTER_PORT:-3000}:3000"       
+    depends_on:
+      - postgres
+      - elasticsearch      
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.10.1
@@ -76,15 +121,11 @@ services:
         target: /usr/share/elasticsearch/data
         bind:
           create_host_path: true
-#      - es_data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"'"]
       interval: 10s
       timeout: 5s
       retries: 5
-#    depends_on:
-#      postgres:
-#        condition: service_healthy
 
   grafana:
     container_name: sql-generator-grafana
@@ -97,7 +138,6 @@ services:
         target: /var/lib/grafana
         bind:
           create_host_path: true
-#      - grafana_data:/var/lib/grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_AUTH_DISABLE_LOGIN_FORM=false

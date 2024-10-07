@@ -1,0 +1,18 @@
+providers:
+  - name: OpenAI
+    class: OpenAIProvider  
+    params:
+      api_key: ${OPENAI_API_KEY}
+    models: 
+      - name: gpt-4o-mini
+        prompt_token_cost_per_1000: 0.00015    
+        output_token_cost_per_1000: 0.00060  
+      - name: gpt-3.5-turbo
+        prompt_token_cost_per_1000: 0.0015    
+        output_token_cost_per_1000: 0.0020        
+  - name: TBD
+    class: TBDProvider  
+    params:
+      tbd: tbd
+    models:
+      - name: tbd

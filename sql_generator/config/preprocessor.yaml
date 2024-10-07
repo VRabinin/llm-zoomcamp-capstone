@@ -1,0 +1,10 @@
+gensim_models:
+  - name:  glove-wiki-gigaword-50
+  - name:  glove-wiki-gigaword-100
+  - name:  glove-wiki-gigaword-200
+  - name:  glove-wiki-gigaword-300
+  - name:  glove-twitter-25
+  - name:  glove-twitter-50
+  - name:  glove-twitter-100
+  - name:  glove-twitter-200
+  - name:  word2vec-google-news-300
