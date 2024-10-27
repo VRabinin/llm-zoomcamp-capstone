@@ -36,8 +36,8 @@ class PromptGenerator:
         return list(self.templates.keys())
     
     def get_prompt(self, template_name: str, **kwargs):
-        prompt_template = self.templates.get(template_name)
-        return prompt_template.format(**kwargs) 
+        prompt_template = self.templates.get(template_name) 
+        return str(prompt_template).format(**kwargs) 
 
 class LLM:
     #prompt_gen: PromptGenerator

@@ -2,7 +2,7 @@ from fuzzywuzzy import fuzz
 from util import Util as util
 from abc import ABC, abstractmethod
 import pandas as pd
-from db import DBMetadata, IDBConnection
+from db import DBMetadata, DBConnection
 import pickle
 from enum import Enum
 
@@ -13,7 +13,7 @@ class SearchTypes(Enum):
 
 class ISearch(ABC):
     config: any
-    db_conn: IDBConnection
+    db_conn: DBConnection
     def __init__(self, config_path: str='', **kwargs):     
         try:
             if config_path != '':
@@ -54,7 +54,7 @@ class FuzzySearch(ISearch):
 
     def search_by_query(self, db_name, query: str, **kwards):
         if self.pre_processor is None:
-            import preprocessor
+            #import preprocessor
             from preprocessor import pre_processor
             self.pre_processor = pre_processor
         if self.df_table_columns is None or db_name != self.db_name:
@@ -69,6 +69,9 @@ class FuzzySearch(ISearch):
         
         keywords = self.pre_processor.query_to_keywords(query, max_synonyms)
         tables = self.search_by_keywords(keywords, similarity_threshold)
+        tables = tables[['table_schema', 'table_name', 'column_name']]
+        tables['table_name'] = tables['table_name'].where(tables['table_schema']  == '', other = tables['table_schema']  + '.' + tables['table_name'])
+        tables = tables.drop(columns=['table_schema'])
         return tables
         
     def search_by_keywords(self, keywords: list, similarity_threshold=90):

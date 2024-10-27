@@ -1,7 +1,7 @@
 import os, re, uuid
 import streamlit as st
 import pandas as pd
-from db import DBConnectionFactory, IDBConnection
+from db import DBConnection
 from search import SearchFactory, SearchTypes
 from llm import LLM, PromptGenerator
 from time import time
@@ -14,9 +14,8 @@ def init_session_var(names: list[str], value=None):
 
 @st.cache_resource(show_spinner=False)
 def init_application():   
-    db_conn = DBConnectionFactory.\
-        get_db_connection(\
-            db_type='postgres',
+    db_conn = DBConnection(\
+            db_type='postgresql',
             db_name = os.environ['POSTGRES_DB'],
             db_host = os.environ['POSTGRES_HOST'],
             db_port = os.environ['POSTGRES_PORT'], 
@@ -34,7 +33,7 @@ def init_application():
     return db_conn, llm_model, search_providers, prompt_generator
 
 @st.cache_data(show_spinner=False)
-def get_db_metadata(_db_conn: IDBConnection):
+def get_db_metadata(_db_conn: DBConnection):
     db_list = _db_conn.get_database_list()
     return db_list
 

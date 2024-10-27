@@ -1,16 +1,19 @@
-import psycopg2, os
+import sqlalchemy, os
+from typing import Optional, Dict, List
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import pandas as pd
 
-from abc import ABC, abstractmethod
-from psycopg2.extensions import connection
+from abc import ABC
+from sqlalchemy import Engine, MetaData, create_engine, text, inspect
+from sqlalchemy.sql import func as sql_func
 
 TZ_INFO = os.getenv("TZ", "Europe/Berlin")
 tz = ZoneInfo(TZ_INFO)
 
-SUPPORTED_DB_TYPES = ["postgres"]
+SUPPORTED_DB_TYPES = ["postgresql"]
 EXCLUDED_DATABASES = ["postgres", "dagster", "sql_generator"]
+SYSTEM_SCHEMAS = ["information_schema", "pg_catalog"]
 
 # Database connection parameters
 
@@ -82,68 +85,24 @@ WHERE
 """
 
 class DBMetadata:
-    df_columns: pd.DataFrame
-    df_table_columns: pd.DataFrame    
-    df_fk: pd.DataFrame
-    df_table_view: pd.DataFrame
-
-class IDBConnection(ABC):
-    db_name: str
-    metadata: DBMetadata 
-    
-    def __init__(self, db_name):
-        self.db_type = db_name
-    
-    @abstractmethod
-    def get_database_list(self) -> list:
-        pass
-
-    @abstractmethod
-    def execute_sql(self, query: str) -> pd.DataFrame:
-        pass
-
-    @abstractmethod
-    def set_curr_database(self, db_name):
-        pass
-
-    def get_curr_database(self):
-        return self.db_name
-
-    @abstractmethod
-    def _load_metadata(self):
-        pass
-
-    def get_metadata(self)-> DBMetadata:
-        return self.metadata
-    
-    @abstractmethod
-    def save_file(self, file_name: str, file_data):
-        pass
-
-    @abstractmethod
-    def load_file(self, file_name: str):
-        pass    
-
-    @abstractmethod
-    def save_feedback(self, conversation_id, feedback, timestamp=None):
-        pass
-    
-    @abstractmethod
-    def save_conversation(self, conversation_id, question, answer_data, timestamp=None):
-        pass
+    src_metadata: MetaData
+    df_table_columns: pd.DataFrame
         
-class PostgresConnection(IDBConnection):
+class DBConnection:
+    db_type: str
     db_name: str
     db_host: str
     db_port: str
     db_user: str
     db_password: str
     read_only: bool
-    conn: connection
+    engine: Engine
+    metadata: Dict[str, DBMetadata]
 
-    
-    def __init__(self, db_name, db_host, db_port, db_user, db_password, read_only=True):
-        super().__init__("postgres")
+    def __init__(self, db_type: str, db_name: str, db_host: str, db_port: str, db_user: str, db_password: str, read_only: bool=True):
+        self.db_type = db_type
+        if db_type not in SUPPORTED_DB_TYPES:
+            raise ValueError(f"Unsupported database type: {db_type}. Supported types are: {SUPPORTED_DB_TYPES}")
         self.main_db_name = db_name # Database which was used to create object.
         self.db_name = db_name #Current database, can be changed by set_curr_database method.
         self.db_host = db_host
@@ -151,62 +110,81 @@ class PostgresConnection(IDBConnection):
         self.db_user = db_user
         self.db_password = db_password
         self.read_only = read_only
-        self.conn = self._init_conn()
+        self._init_engine()
         self._load_metadata()
-        
-    def _init_conn(self):
-        conn = psycopg2.connect(
-            database=self.db_name,
-            user=self.db_user,
-            password=self.db_password,
-            host=self.db_host,
-            port=self.db_port
-        )
-        if self.read_only:
-            conn.set_session(readonly=True)
-        else:
-            conn.set_session(readonly=False)
-        return conn
     
-    def _load_metadata(self):
-        #Get Tables/Columns metadata
-        
-        self.metadata = DBMetadata()
-        
-        cursor = self.conn.cursor()
-        cursor.execute(COLUMNS_QUERY_POSTGRES)
-        columns_data = cursor.fetchall()        
-        cursor.close()
-        columns = ['table_schema', 'table_name', 'table_type', 'column_name', 'column_data_type', 'is_primary_key', 'is_nullable']
-        self.metadata.df_columns = pd.DataFrame(columns_data, columns=columns)
-        self.metadata.df_columns['table_name'] = self.metadata.df_columns[['table_schema', 'table_name']]\
-            .agg('.'.join, axis=1)\
-            .drop(columns=['table_schema'])
-        # Create a DataFrame with table name and a list of all table columns in a single field
-        self.metadata.df_table_columns = self.metadata.df_columns\
-            .groupby('table_name')['column_name'].apply(list).reset_index()
-        cursor = self.conn.cursor()
-        cursor.execute(FK_QUERY_POSTGRES)
-        fk_data = cursor.fetchall()
-        cursor.close()        
-        columns = ['source_table', 'source_column', 'target_table', 'target_column']
-        self.metadata.df_fk = pd.DataFrame(fk_data, columns=columns)
+    def _init_engine(self, db_name: Optional[str] = None):
+        """
+        Initializes the database engine with the provided or default database name.
 
-        cursor = self.conn.cursor()
-        cursor.execute(TABLE_VIEW_QUERY_POSTGRES)
-        table_view_data = cursor.fetchall()
-        cursor.close()        
-        table_view_columns = ['view_name', 'table_name']
-        self.metadata.df_table_view = pd.DataFrame(table_view_data, columns=table_view_columns)
+        Args:
+            db_name (Optional[str]): The name of the database to connect to. If not provided, 
+                                     the default database name (`self.db_name`) will be used.
+
+        Returns:
+            None
+        """
+
+        if db_name is None:
+            db_name = self.db_name
+        self.engine = create_engine(f"{self.db_type}://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{db_name}")
+        self.engine.update_execution_options(read_only=self.read_only)
+
+    def get_curr_database(self):
+        return self.db_name
+
+    def get_metadata(self, refresh: bool=False, exclude_system_tables: bool=True)-> DBMetadata:
+        if self.metadata.get(self.db_name) is None or refresh:
+            self._load_metadata()
+        return self.metadata[self.db_name] 
+
+    def _load_metadata(self):
+        if not hasattr(self, 'metadata'):
+            self.metadata = {}
+        # Skip loading metadata if it was already loaded, no inline refresh implemented.
+        if self.metadata.get(self.db_name) is not None:
+            return
+        # Initialize the engine database name changed
+        if self.db_name != self.engine.url.database:
+            self._init_engine(self.db_name)
+        db_md = DBMetadata()
+        db_md.src_metadata = MetaData()
+        inspector = inspect(self.engine)    
+        for schema in inspector.get_schema_names():
+            if schema in SYSTEM_SCHEMAS:
+                continue
+            db_md.src_metadata.reflect(bind=self.engine, schema=schema, views=True)
+            # Get Tables/Columns metadata
+            tables = db_md.src_metadata.tables
+            tab_output = []
+            for table in tables:
+                tab_output.append({
+                    'table_schema': tables[table].schema if tables[table].schema else '',
+                    'table_name': tables[table].name,
+                    'table_type': tables[table].info.get('type', 'table'),
+                    'column_name': list(tables[table].columns.keys()),
+                    'data_type': [str(tables[table].columns[col].type) for col in tables[table].columns.keys()],
+                    'is_primary_key': [col.primary_key for col in tables[table].columns.values()],
+                    'is_nullable': [col.nullable for col in tables[table].columns.values()]
+                })
+                #tab_col = tables[table].schema \
+                #    + '.' if tables[table].schema else '' \
+                #    + tables[table].name \
+                #    + ' (' \
+                #    + ', '.join(tables[table].columns.keys())\
+                #    + ')'
+                #db_md.table_columns.append(tab_col)
+            # Add currewnt DB metadata to the dictionary
+        db_md.df_table_columns = pd.DataFrame(tab_output, columns=['table_schema', 'table_name', 'table_type', 'column_name', 'data_type', 'is_primary_key', 'is_nullable'])
+        self.metadata[self.db_name] = db_md
 
     def set_curr_database(self, db_name: str):
         if self.db_name == db_name:
             return
-        
         self.db_name = db_name
-        if self.conn is not None:
-            self.conn.close()
-        self.conn = self._init_conn()
+        if self.engine is not None:
+            self.engine.dispose()
+        self._init_engine()
         self._load_metadata()
 
     def execute_sql(self, query: str) -> pd.DataFrame:
@@ -218,23 +196,29 @@ class PostgresConnection(IDBConnection):
             list: A list of tuples containing the rows fetched by the query.
         """
         try:
-            cursor = self.conn.cursor()
-            cursor.execute(query)
-            data = cursor.fetchall()
-            # Get column names from the cursor description
-            column_names = [desc[0] for desc in cursor.description]
-            if column_names[0] == 'error':
-                self.conn.close()
-                self.conn = self._init_conn()                 
+            with self.engine.connect() as con:
+                cursor = con.execute(text(query))     
+                data = cursor.fetchall()
+                # Get column names from the cursor description
+                column_names = cursor.keys()
+                #if column_names[0] == 'error':
+                #    self.conn.close()
+                #    self.conn = self._init_conn()                 
             #cursor.close()
         except Exception as e:
             data = [str(e)]
             column_names = ['error']
-            self.conn.close()
-            self.conn = self._init_conn()    
+            #self.conn.close()
+            #self.conn = self._init_conn()    
                 
         # Create DataFrame with the fetched data and column names
         return pd.DataFrame(data, columns=column_names)
+
+    def _get_database_list_postgres(self) -> list:
+        with self.engine.connect() as con:
+            cursor = con.execute(text(DATABASES_QUERY_POSTGRES))
+            df_databases = pd.DataFrame(cursor.fetchall())
+            return df_databases.iloc[:,0].tolist()
 
     def get_database_list(self) -> list:
         """
@@ -245,67 +229,61 @@ class PostgresConnection(IDBConnection):
         Returns:
             pd.DataFrame: A DataFrame containing the list of databases.
         """
-        cursor = self.conn.cursor()
-        cursor.execute(DATABASES_QUERY_POSTGRES)
-        df_databases = pd.DataFrame(cursor.fetchall())
-        cursor.close()
-        df_databases = df_databases[~df_databases[0].isin(EXCLUDED_DATABASES)]
-        
-        return df_databases[0].tolist()
+        match self.engine.dialect.name:
+            case "postgresql":
+                db_list = self._get_database_list_postgres()
+            case _:
+                raise ValueError(f"Unsupported database type: {self.engine.dialect.name}")
+        return [db for db in db_list if db not in EXCLUDED_DATABASES]
+            
+            
 
     def save_file(self, file_name: str, file_data):
         temp_db_name = ''         
         if self.db_name != self.main_db_name:
             temp_db_name = self.db_name
             self.db_name = self.main_db_name 
-            if self.conn is not None:
-                self.conn.close()
-            self.conn = self._init_conn()             
+            self._init_engine()
         try:        
-            cursor = self.conn.cursor()
-            try:            
-                cursor.execute("DELETE FROM files WHERE file_name = %s", (file_name,))
-                # Execute the INSERT statement 
-                cursor.execute("INSERT INTO files\
-                (file_name, file_data) " +
-                        "VALUES(%s,%s)", 
-                        (file_name, psycopg2.Binary(file_data))) 
-                # Commit the changes to the database 
-                self.conn.commit() 
-                cursor.close()
-            except (Exception, psycopg2.DatabaseError) as error: 
+            try:    
+                with self.engine.connect() as con:
+                    # Delete the file if it already exists        
+                    con.execute(text(f"DELETE FROM files WHERE file_name = '{file_name}'"))
+                    #data = sql_func.HEX(file_data)
+                    #print(data)
+                    # Execute the INSERT statement 
+                    con.execute(text(f"INSERT INTO files\
+                        (file_name, file_data)\
+                        VALUES(:file_name, :file_data)"), {'file_name': file_name, 'file_data': file_data})
+                    # Commit the changes to the database 
+                    con.commit() 
+            except (Exception) as error: 
                 print("Error while inserting data in files table", error) 
             finally: 
                 pass
         finally: 
             if temp_db_name != '':
                 self.db_name = temp_db_name
-                self.conn = self._init_conn()                
+                self._init_engine()                
         
     def load_file(self, file_name: str): 
         temp_db_name = '' 
         if self.db_name != self.main_db_name:
             temp_db_name = self.db_name
             self.db_name = self.main_db_name 
-            if self.conn is not None:
-                self.conn.close()
-            self.conn = self._init_conn()   
+            self._init_engine() 
         data = None        
-        try: 
-            cursor = self.conn.cursor()
-            try:            
-                cursor.execute("SELECT file_data FROM files WHERE file_name = %s", (file_name,))
+        try:            
+            with self.engine.connect() as con:                
+                cursor = con.execute(text(f"SELECT file_data FROM files WHERE file_name = '{file_name}'"))
                 data = cursor.fetchone()[0]
-                print(data)
-                cursor.close()
-            except (Exception, psycopg2.DatabaseError) as error: 
-                print("Error reading data from files table", error) 
-            finally: 
-                pass
+                # print(data)
+        except (Exception) as error: 
+            print("Error reading data from files table", error) 
         finally: 
             if temp_db_name != '':
                 self.db_name = temp_db_name
-                self.conn = self._init_conn()               
+                self._init_engine()              
         return data
 
     def save_conversation(self, conversation_id, question, answer_data, timestamp=None):
@@ -315,46 +293,42 @@ class PostgresConnection(IDBConnection):
         if self.db_name != self.main_db_name:
             temp_db_name = self.db_name
             self.db_name = self.main_db_name 
-            if self.conn is not None:
-                self.conn.close()
-            self.conn = self._init_conn()  
+            self._init_engine()  
         try:
             print(answer_data)
-            with self.conn.cursor() as cur:
-                cur.execute(
+            with self.engine.connect() as con:  
+                con.execute(text(
                     """
                     INSERT INTO conversations 
                     (id, question, answer, database_name, model, search_provider, rag_parameters, response_time, relevance, 
                     relevance_explanation, prompt_tokens, completion_tokens, total_tokens, 
                     eval_prompt_tokens, eval_completion_tokens, eval_total_tokens, llm_cost, timestamp)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        conversation_id,
-                        question,
-                        answer_data["answer"],
-                        answer_data["database_name"],                        
-                        answer_data["model"],
-                        answer_data["search_provider"],
-                        answer_data["rag_parameters"],                        
-                        answer_data["response_time"],
-                        answer_data["relevance"],
-                        answer_data["relevance_explanation"],
-                        answer_data["prompt_tokens"],
-                        answer_data["completion_tokens"],
-                        answer_data["total_tokens"],
-                        answer_data["eval_prompt_tokens"],
-                        answer_data["eval_completion_tokens"],
-                        answer_data["eval_total_tokens"],
-                        answer_data["llm_cost"],
-                        timestamp
-                    ),
-                )
-            self.conn.commit()
+                    VALUES (:v1, :v2, :v3, :v4, :v5, :v6, :v7, :v8, :v9, :v10, :v11, :v12, :v13, :v14, :v15, :v16, :v17, :v18)
+                    """), {
+                        'v1': conversation_id,
+                        'v2': question,
+                        'v3': answer_data["answer"],
+                        'v4': answer_data["database_name"],                        
+                        'v5': answer_data["model"],
+                        'v6': answer_data["search_provider"],
+                        'v7': answer_data["rag_parameters"],                        
+                        'v8': answer_data["response_time"],
+                        'v9': answer_data["relevance"],
+                        'v10': answer_data["relevance_explanation"],
+                        'v11': answer_data["prompt_tokens"],
+                        'v12': answer_data["completion_tokens"],
+                        'v13': answer_data["total_tokens"],
+                        'v14': answer_data["eval_prompt_tokens"],
+                        'v15': answer_data["eval_completion_tokens"],
+                        'v16': answer_data["eval_total_tokens"],
+                        'v17': answer_data["llm_cost"],
+                        'v18': timestamp
+                })
+                con.commit()
         finally:
             if temp_db_name != '':
                 self.db_name = temp_db_name
-                self.conn = self._init_conn()   
+                self._init_engine()
 
 
     def save_feedback(self, conversation_id, feedback, timestamp=None):
@@ -364,35 +338,19 @@ class PostgresConnection(IDBConnection):
         if self.db_name != self.main_db_name:
             temp_db_name = self.db_name
             self.db_name = self.main_db_name 
-            if self.conn is not None:
-                self.conn.close()
-            self.conn = self._init_conn()  
+            self._init_engine() 
         try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    f"DELETE FROM feedback WHERE conversation_id='{conversation_id}'")
-                cur.execute(
-                    """INSERT INTO feedback (conversation_id, feedback, timestamp) VALUES (%s, %s, COALESCE(%s, CURRENT_TIMESTAMP))""",
-                    (conversation_id, feedback, timestamp),
+            with self.engine.connect() as con:  
+                con.execute(text(
+                    f"DELETE FROM feedback WHERE conversation_id='{conversation_id}'"))
+                con.execute(text(
+                    """INSERT INTO feedback (conversation_id, feedback, timestamp) VALUES (:v1, :v2, COALESCE(:v3, CURRENT_TIMESTAMP))"""),
+                    {'v1': conversation_id, 'v2': feedback, 'v3': timestamp}
                 )
-            self.conn.commit()            
+                con.commit()            
         finally:
             if temp_db_name != '':
                 self.db_name = temp_db_name
-                self.conn = self._init_conn()   
+                self._init_engine()  
 
-class DBConnectionFactory:
-    @staticmethod
-    def get_db_connection(db_type: str, **kwargs)-> IDBConnection:
-        if db_type == "postgres":
-            db_name = kwargs.get("db_name")
-            db_host = kwargs.get("db_host")
-            db_port = kwargs.get("db_port")
-            db_user = kwargs.get("db_user")
-            db_password = kwargs.get("db_password")
-            read_only = kwargs.get("read_only", True)
-            if db_name is None or db_host is None or db_user is None or db_password is None:
-                raise ValueError("Database connection parameters are missing.")
-            return PostgresConnection(db_name, db_host, db_port, db_user, db_password, read_only)
-        else:
-            raise ValueError(f"Unknown database type: {db_type}. Only 'postgres' is supported.")
+           
